@@ -1,9 +1,9 @@
 import {
   Controller, Post, Get, Patch,
   Body, Param, UseGuards,
-  UseInterceptors, UploadedFile, Res,
+  UseInterceptors, UploadedFile, Res, Req,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -36,79 +36,92 @@ const photoStorage = diskStorage({
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // ─── LOCAL LOGIN ──────────────────────────────────────────
   @Post('login')
   @Public()
   @Throttle({ short: { limit: 10, ttl: 300000 } })
   @ApiOperation({ summary: 'Tizimga kirish (telefon + parol)' })
   @ApiResponse({ status: 200, type: LoginResponseDto })
-  @ApiResponse({ status: 401, description: 'Noto\'g\'ri login yoki parol' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
-  // ─── GOOGLE OAUTH ─────────────────────────────────────────
+  @Get('callback')
+  @Public()
+  @ApiOperation({ summary: 'OAuth callback — token ko\'rsatadi' })
+  callback(@Req() req: Request, @Res() res: Response) {
+    const token = req.query.token as string;
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>CRM Login</title>
+  <style>
+    body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0}
+    .card{background:white;padding:32px;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,.1);max-width:640px;width:90%}
+    h2{color:#1a73e8;margin:0 0 8px}
+    .token{background:#f8f9fa;border:1px solid #ddd;border-radius:8px;padding:12px;word-break:break-all;font-size:11px;max-height:100px;overflow-y:auto;margin:8px 0}
+    .btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .btn{padding:10px 18px;border-radius:6px;border:none;cursor:pointer;font-size:14px;color:white;text-decoration:none}
+    .blue{background:#1a73e8}.green{background:#34a853}
+    .note{font-size:12px;color:#888;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Muvaffaqiyatli kirish!</h2>
+    <p style="color:#34a853">Google/GitHub orqali kirish amalga oshdi.</p>
+    <p><strong>JWT Token:</strong></p>
+    <div class="token" id="tok">${token}</div>
+    <div class="btns">
+      <button class="btn blue" onclick="copy()">Tokenni nusxalash</button>
+      <a class="btn green" href="/api/docs">Swagger ga otish</a>
+    </div>
+    <p class="note">Swagger da: Authorize tugmasini bosib, Bearer [token] kiriting.</p>
+  </div>
+  <script>
+    function copy(){
+      navigator.clipboard.writeText(document.getElementById('tok').innerText)
+        .then(()=>alert('Token nusxalandi! Swagger Authorize ga kiriting.'));
+    }
+  </script>
+</body>
+</html>`);
+  }
+
   @Get('google')
   @Public()
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({
-    summary: 'Google orqali kirish',
-    description: `
-**Brauzerda oching:** \`GET /api/auth/google\`
-
-Swagger da ishlamaydi — to'g'ridan brauzer URL satriga kiriting.
-Google login sahifasiga yo'naltiriladi, keyin callback avtomatik chaqiriladi.
-    `,
-  })
-  googleLogin() {
-    // Passport avtomatik Google ga redirect qiladi
-  }
+  @ApiOperation({ summary: 'Google orqali kirish — brauzerda oching' })
+  googleLogin() {}
 
   @Get('google/callback')
   @Public()
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Google callback — avtomatik chaqiriladi' })
+  @ApiOperation({ summary: 'Google callback' })
   async googleCallback(@CurrentUser() oauthUser: any, @Res() res: Response) {
     const { token } = await this.authService.validateOAuthUser(oauthUser);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    // Frontend ga token bilan redirect
-    res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
   }
 
-  // ─── GITHUB OAUTH ─────────────────────────────────────────
   @Get('github')
   @Public()
   @UseGuards(GithubAuthGuard)
-  @ApiOperation({
-    summary: 'GitHub orqali kirish',
-    description: `
-**Brauzerda oching:** \`GET /api/auth/github\`
-
-Swagger da ishlamaydi — to'g'ridan brauzer URL satriga kiriting.
-GitHub login sahifasiga yo'naltiriladi, keyin callback avtomatik chaqiriladi.
-    `,
-  })
-  githubLogin() {
-    // Passport avtomatik GitHub ga redirect qiladi
-  }
+  @ApiOperation({ summary: 'GitHub orqali kirish — brauzerda oching' })
+  githubLogin() {}
 
   @Get('github/callback')
   @Public()
   @UseGuards(GithubAuthGuard)
-  @ApiOperation({ summary: 'GitHub callback — avtomatik chaqiriladi' })
+  @ApiOperation({ summary: 'GitHub callback' })
   async githubCallback(@CurrentUser() oauthUser: any, @Res() res: Response) {
     const { token } = await this.authService.validateOAuthUser(oauthUser);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
   }
 
-  // ─── USERS (SuperAdmin) ───────────────────────────────────
   @Post('users')
   @Roles(UserRole.SUPERADMIN)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Admin yoki Teacher yaratish (faqat SUPERADMIN)' })
   @ApiResponse({ status: 201, description: 'Yaratildi' })
-  @ApiResponse({ status: 409, description: 'Telefon allaqachon mavjud' })
   createUser(@Body() dto: CreateAdminDto) {
     return this.authService.createUser(dto);
   }
@@ -116,7 +129,7 @@ GitHub login sahifasiga yo'naltiriladi, keyin callback avtomatik chaqiriladi.
   @Get('users')
   @Roles(UserRole.SUPERADMIN)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Barcha adminlar va o\'qituvchilar (faqat SUPERADMIN)' })
+  @ApiOperation({ summary: 'Barcha foydalanuvchilar (faqat SUPERADMIN)' })
   getAllUsers() {
     return this.authService.getAllUsers();
   }
@@ -139,7 +152,6 @@ GitHub login sahifasiga yo'naltiriladi, keyin callback avtomatik chaqiriladi.
     return this.authService.activateUser(id);
   }
 
-  // ─── PROFILE ──────────────────────────────────────────────
   @Get('profile')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Mening profilim' })
@@ -153,8 +165,7 @@ GitHub login sahifasiga yo'naltiriladi, keyin callback avtomatik chaqiriladi.
     storage: photoStorage,
     fileFilter: (req, file, cb) => {
       if (!file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
-        cb(new Error('Faqat rasm fayllari'), false);
-        return;
+        cb(new Error('Faqat rasm fayllari'), false); return;
       }
       cb(null, true);
     },

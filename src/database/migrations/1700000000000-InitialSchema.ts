@@ -4,131 +4,126 @@ export class InitialSchema1700000000000 implements MigrationInterface {
   name = 'InitialSchema1700000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // ─── UUID EXTENSION (SAFE) ───────────────────────────────
+    // UUID extension
+    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
+    // Enum: user role
     await queryRunner.query(`
-      CREATE EXTENSION IF NOT EXISTS "uuid-ossp"
+      CREATE TYPE "public"."users_role_enum"
+      AS ENUM('SUPERADMIN', 'ADMIN', 'TEACHER')
     `);
 
-    // ─── ENUM: ROLE (SAFE) ───────────────────────────────────
+    // Enum: auth provider
     await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'users_role_enum') THEN
-          CREATE TYPE "public"."users_role_enum"
-          AS ENUM('SUPERADMIN', 'ADMIN', 'TEACHER');
-        END IF;
-      END$$;
+      CREATE TYPE "public"."users_provider_enum"
+      AS ENUM('local', 'google', 'github')
     `);
 
-    // ─── ENUM: PROVIDER (SAFE) ───────────────────────────────
+    // users jadvali
     await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'users_provider_enum') THEN
-          CREATE TYPE "public"."users_provider_enum"
-          AS ENUM('local', 'google', 'github');
-        END IF;
-      END$$;
-    `);
-
-    // ─── USERS ───────────────────────────────────────────────
-    await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "users" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        "fullName" character varying NOT NULL,
-        "phone" character varying UNIQUE,
+      CREATE TABLE "users" (
+        "id"           uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "fullName"     character varying NOT NULL,
+        "phone"        character varying UNIQUE,
         "passwordHash" character varying,
-        "email" character varying UNIQUE,
-        "googleId" character varying UNIQUE,
-        "githubId" character varying UNIQUE,
-        "provider" "public"."users_provider_enum" NOT NULL DEFAULT 'local',
-        "role" "public"."users_role_enum" NOT NULL DEFAULT 'ADMIN',
-        "photo" character varying,
-        "isActive" boolean NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-        "updatedAt" TIMESTAMP NOT NULL DEFAULT now()
+        "email"        character varying UNIQUE,
+        "googleId"     character varying UNIQUE,
+        "githubId"     character varying UNIQUE,
+        "provider"     "public"."users_provider_enum" NOT NULL DEFAULT 'local',
+        "role"         "public"."users_role_enum" NOT NULL DEFAULT 'ADMIN',
+        "photo"        character varying,
+        "isActive"     boolean NOT NULL DEFAULT true,
+        "createdAt"    TIMESTAMP NOT NULL DEFAULT now(),
+        "updatedAt"    TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT "PK_users" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── STUDENTS ────────────────────────────────────────────
+    // students jadvali
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "students" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        "fullName" character varying NOT NULL,
-        "phone" character varying NOT NULL,
-        "direction" character varying NOT NULL,
-        "parentName" character varying,
+      CREATE TABLE "students" (
+        "id"          uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "fullName"    character varying NOT NULL,
+        "phone"       character varying NOT NULL,
+        "direction"   character varying NOT NULL,
+        "parentName"  character varying,
         "parentPhone" character varying,
-        "photo" character varying,
-        "isActive" boolean NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-        "updatedAt" TIMESTAMP NOT NULL DEFAULT now()
+        "photo"       character varying,
+        "isActive"    boolean NOT NULL DEFAULT true,
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT now(),
+        "updatedAt"   TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT "PK_students" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── GROUPS ──────────────────────────────────────────────
+    // groups jadvali
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "groups" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        "direction" character varying NOT NULL,
-        "lessonDays" character varying NOT NULL,
-        "lessonTime" character varying NOT NULL,
-        "teacherId" uuid,
+      CREATE TABLE "groups" (
+        "id"           uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "direction"    character varying NOT NULL,
+        "lessonDays"   character varying NOT NULL,
+        "lessonTime"   character varying NOT NULL,
+        "teacherId"    uuid,
         "teacherPhoto" character varying,
-        "isActive" boolean NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-        "updatedAt" TIMESTAMP NOT NULL DEFAULT now()
+        "isActive"     boolean NOT NULL DEFAULT true,
+        "createdAt"    TIMESTAMP NOT NULL DEFAULT now(),
+        "updatedAt"    TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT "PK_groups" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── GROUP_STUDENTS ──────────────────────────────────────
+    // group_students (ManyToMany)
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "group_students" (
-        "groupId" uuid NOT NULL,
+      CREATE TABLE "group_students" (
+        "groupId"   uuid NOT NULL,
         "studentId" uuid NOT NULL,
-        PRIMARY KEY ("groupId", "studentId")
+        CONSTRAINT "PK_group_students" PRIMARY KEY ("groupId", "studentId")
       )
     `);
 
-    // ─── PAYMENTS ────────────────────────────────────────────
+    // payments jadvali
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "payments" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        "studentId" uuid NOT NULL,
-        "groupId" uuid NOT NULL,
-        "teacherId" uuid,
-        "amount" numeric(12,2) NOT NULL DEFAULT 0,
+      CREATE TABLE "payments" (
+        "id"          uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "studentId"   uuid NOT NULL,
+        "groupId"     uuid NOT NULL,
+        "teacherId"   uuid,
+        "amount"      numeric(12,2) NOT NULL DEFAULT 0,
         "paymentDate" date NOT NULL,
-        "note" character varying,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now()
+        "note"        character varying,
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT "PK_payments" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── ATTENDANCES ─────────────────────────────────────────
+    // attendances jadvali
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "attendances" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+      CREATE TABLE "attendances" (
+        "id"        uuid NOT NULL DEFAULT uuid_generate_v4(),
         "studentId" uuid NOT NULL,
-        "groupId" uuid NOT NULL,
-        "date" date NOT NULL,
-        "present" boolean NOT NULL DEFAULT true,
+        "groupId"   uuid NOT NULL,
+        "date"      date NOT NULL,
+        "present"   boolean NOT NULL DEFAULT true,
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-        UNIQUE ("studentId", "groupId", "date")
+        CONSTRAINT "UQ_attendance" UNIQUE ("studentId", "groupId", "date"),
+        CONSTRAINT "PK_attendances" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── COMPLAINTS ──────────────────────────────────────────
+    // complaints jadvali
     await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS "complaints" (
-        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+      CREATE TABLE "complaints" (
+        "id"          uuid NOT NULL DEFAULT uuid_generate_v4(),
         "studentName" character varying NOT NULL,
-        "phone" character varying NOT NULL,
+        "phone"       character varying NOT NULL,
         "description" text NOT NULL,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now()
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT "PK_complaints" PRIMARY KEY ("id")
       )
     `);
 
-    // ─── FOREIGN KEYS ────────────────────────────────────────
+    // ─── Foreign Keys ─────────────────────────────────────────
+
     await queryRunner.query(`
       ALTER TABLE "groups"
       ADD CONSTRAINT "FK_groups_teacher"
@@ -174,34 +169,41 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       FOREIGN KEY ("groupId") REFERENCES "groups"("id")
     `);
 
-    // ─── INDEXES ─────────────────────────────────────────────
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_students_direction" ON "students" ("direction")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payments_date" ON "payments" ("paymentDate")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_attendance_date" ON "attendances" ("date")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_attendance_group" ON "attendances" ("groupId")`);
+    // ─── Indexlar (qidiruv tezligi uchun) ─────────────────────
+
+    await queryRunner.query(`CREATE INDEX "IDX_students_direction" ON "students" ("direction")`);
+    await queryRunner.query(`CREATE INDEX "IDX_payments_date" ON "payments" ("paymentDate")`);
+    await queryRunner.query(`CREATE INDEX "IDX_attendance_date" ON "attendances" ("date")`);
+    await queryRunner.query(`CREATE INDEX "IDX_attendance_group" ON "attendances" ("groupId")`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // FK
-    await queryRunner.query(`ALTER TABLE "attendances" DROP CONSTRAINT IF EXISTS "FK_att_group"`);
-    await queryRunner.query(`ALTER TABLE "attendances" DROP CONSTRAINT IF EXISTS "FK_att_student"`);
-    await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT IF EXISTS "FK_payments_group"`);
-    await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT IF EXISTS "FK_payments_student"`);
-    await queryRunner.query(`ALTER TABLE "group_students" DROP CONSTRAINT IF EXISTS "FK_gs_student"`);
-    await queryRunner.query(`ALTER TABLE "group_students" DROP CONSTRAINT IF EXISTS "FK_gs_group"`);
-    await queryRunner.query(`ALTER TABLE "groups" DROP CONSTRAINT IF EXISTS "FK_groups_teacher"`);
+    // Indexlarni o'chirish
+    await queryRunner.query(`DROP INDEX "IDX_attendance_group"`);
+    await queryRunner.query(`DROP INDEX "IDX_attendance_date"`);
+    await queryRunner.query(`DROP INDEX "IDX_payments_date"`);
+    await queryRunner.query(`DROP INDEX "IDX_students_direction"`);
 
-    // tables
-    await queryRunner.query(`DROP TABLE IF EXISTS "complaints"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "attendances"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "payments"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "group_students"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "groups"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "students"`);
-    await queryRunner.query(`DROP TABLE IF EXISTS "users"`);
+    // Foreign key larni o'chirish
+    await queryRunner.query(`ALTER TABLE "attendances" DROP CONSTRAINT "FK_att_group"`);
+    await queryRunner.query(`ALTER TABLE "attendances" DROP CONSTRAINT "FK_att_student"`);
+    await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT "FK_payments_group"`);
+    await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT "FK_payments_student"`);
+    await queryRunner.query(`ALTER TABLE "group_students" DROP CONSTRAINT "FK_gs_student"`);
+    await queryRunner.query(`ALTER TABLE "group_students" DROP CONSTRAINT "FK_gs_group"`);
+    await queryRunner.query(`ALTER TABLE "groups" DROP CONSTRAINT "FK_groups_teacher"`);
 
-    // enums (safe)
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."users_provider_enum"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."users_role_enum"`);
+    // Jadvallarni o'chirish
+    await queryRunner.query(`DROP TABLE "complaints"`);
+    await queryRunner.query(`DROP TABLE "attendances"`);
+    await queryRunner.query(`DROP TABLE "payments"`);
+    await queryRunner.query(`DROP TABLE "group_students"`);
+    await queryRunner.query(`DROP TABLE "groups"`);
+    await queryRunner.query(`DROP TABLE "students"`);
+    await queryRunner.query(`DROP TABLE "users"`);
+
+    // Enumlarni o'chirish
+    await queryRunner.query(`DROP TYPE "public"."users_provider_enum"`);
+    await queryRunner.query(`DROP TYPE "public"."users_role_enum"`);
   }
 }

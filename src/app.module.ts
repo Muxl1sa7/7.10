@@ -26,7 +26,7 @@ import { UsersModule } from './users/users.module';
         password: cfg.get('DB_PASSWORD', 'password'),
         database: cfg.get('DB_DATABASE', 'crm_db'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize:false,
+        synchronize: cfg.get('NODE_ENV') !== 'production',
         logging: cfg.get('NODE_ENV') === 'development',
         extra: { max: 10, connectionTimeoutMillis: 3000 },
       }),

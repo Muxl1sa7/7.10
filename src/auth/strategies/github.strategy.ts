@@ -7,9 +7,9 @@ import { ConfigService } from '@nestjs/config';
 export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
   constructor(private configService: ConfigService) {
     super({
-      clientID: configService.get<string>('GITHUB_CLIENT_ID'),
-      clientSecret: configService.get<string>('GITHUB_CLIENT_SECRET'),
-      callbackURL: configService.get<string>('GITHUB_CALLBACK_URL'),
+      clientID: configService.get<string>('GITHUB_CLIENT_ID') || 'GITHUB_CLIENT_ID_NOT_SET',
+      clientSecret: configService.get<string>('GITHUB_CLIENT_SECRET') || 'GITHUB_CLIENT_SECRET_NOT_SET',
+      callbackURL: configService.get<string>('GITHUB_CALLBACK_URL') || 'http://localhost:3000/api/auth/github/callback',
       scope: ['user:email'],
     });
   }
@@ -20,11 +20,7 @@ export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
     profile: any,
     done: Function,
   ): Promise<any> {
-    // GitHub da email private bo'lishi mumkin
-    const email =
-      profile.emails?.[0]?.value ||
-      `${profile.username}@github.com`;
-
+    const email = profile.emails?.[0]?.value || `${profile.username}@github.com`;
     const user = {
       githubId: profile.id,
       email,
@@ -32,7 +28,6 @@ export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
       photo: profile.photos?.[0]?.value || null,
       provider: 'github',
     };
-
     done(null, user);
   }
 }
