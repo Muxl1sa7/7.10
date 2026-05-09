@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -46,19 +47,11 @@ export class User {
   @Column({ nullable: true, unique: true })
   githubId: string;
 
-  @Column({
-    type: 'enum',
-    enum: AuthProvider,
-    default: AuthProvider.LOCAL,
-  })
+  @Column({ type: 'enum', enum: AuthProvider, default: AuthProvider.LOCAL })
   @ApiProperty({ enum: AuthProvider })
   provider: AuthProvider;
 
-  @Column({
-    type: 'enum',
-    enum: UserRole,
-    default: UserRole.ADMIN,
-  })
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.ADMIN })
   @ApiProperty({ enum: UserRole })
   role: UserRole;
 
@@ -69,6 +62,14 @@ export class User {
   @Column({ default: true })
   @ApiProperty()
   isActive: boolean;
+
+  // Refresh token — hash ko'rinishida saqlanadi
+  @Column({ nullable: true })
+  refreshTokenHash: string;
+
+  // Soft delete — o'chirilgan vaqti
+  @DeleteDateColumn()
+  deletedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

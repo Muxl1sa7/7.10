@@ -1,13 +1,11 @@
 import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-  NotFoundException,
-  BadRequestException,
+  Injectable, UnauthorizedException,
+  ConflictException, NotFoundException, BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole, AuthProvider } from '../users/user.entity';
 import { LoginDto, CreateAdminDto, UpdateProfileDto } from './dto/auth.dto';
@@ -18,9 +16,10 @@ export class AuthService {
     @InjectRepository(User)
     private userRepo: Repository<User>,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
-  // ─── LOCAL LOGIN ──────────────────────────────────────────
+  // ─── LOCAL LOGIN ─────────────────────────────────────────
   async login(dto: LoginDto) {
     const user = await this.userRepo.findOne({
       where: { phone: dto.phone, isActive: true },
@@ -30,43 +29,56 @@ export class AuthService {
     const isValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isValid) throw new UnauthorizedException('Telefon raqam yoki parol noto\'g\'ri');
 
-    const token = this.generateToken(user);
-    return {
-      token,
-      user: { id: user.id, fullName: user.fullName, phone: user.phone, role: user.role },
-    };
+    return this.generateTokens(user);
   }
 
-  // ─── GOOGLE / GITHUB OAUTH ────────────────────────────────
+  // ─── REFRESH TOKEN ───────────────────────────────────────
+  async refreshTokens(refreshToken: string) {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get('JWT_REFRESH_SECRET', 'refresh-secret'),
+      });
+    } catch {
+      throw new UnauthorizedException('Refresh token yaroqsiz yoki muddati tugagan');
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { id: payload.sub, isActive: true },
+    });
+    if (!user || !user.refreshTokenHash) {
+      throw new UnauthorizedException('Refresh token topilmadi');
+    }
+
+    const isValid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+    if (!isValid) throw new UnauthorizedException('Refresh token noto\'g\'ri');
+
+    return this.generateTokens(user);
+  }
+
+  // ─── LOGOUT ──────────────────────────────────────────────
+  async logout(userId: string) {
+    await this.userRepo.update(userId, { refreshTokenHash: null });
+    return { message: 'Muvaffaqiyatli chiqildi' };
+  }
+
+  // ─── GOOGLE / GITHUB OAUTH ───────────────────────────────
   async validateOAuthUser(oauthUser: {
-    email: string;
-    fullName: string;
-    photo?: string;
-    googleId?: string;
-    githubId?: string;
-    provider: string;
+    email: string; fullName: string; photo?: string;
+    googleId?: string; githubId?: string; provider: string;
   }) {
-    // 1. Google/GitHub ID bo'yicha qidiramiz
     let user: User;
 
     if (oauthUser.googleId) {
-      user = await this.userRepo.findOne({
-        where: { googleId: oauthUser.googleId },
-      });
+      user = await this.userRepo.findOne({ where: { googleId: oauthUser.googleId } });
     } else if (oauthUser.githubId) {
-      user = await this.userRepo.findOne({
-        where: { githubId: oauthUser.githubId },
-      });
+      user = await this.userRepo.findOne({ where: { githubId: oauthUser.githubId } });
     }
 
-    // 2. Topilmasa email bo'yicha qidiramiz
     if (!user && oauthUser.email) {
-      user = await this.userRepo.findOne({
-        where: { email: oauthUser.email },
-      });
+      user = await this.userRepo.findOne({ where: { email: oauthUser.email } });
     }
 
-    // 3. Hali ham topilmasa — yangi user yaratamiz
     if (!user) {
       user = this.userRepo.create({
         fullName: oauthUser.fullName,
@@ -81,63 +93,44 @@ export class AuthService {
       });
       await this.userRepo.save(user);
     } else {
-      // 4. Mavjud userga OAuth ID ni bog'laymiz
-      if (oauthUser.googleId && !user.googleId) {
-        user.googleId = oauthUser.googleId;
-      }
-      if (oauthUser.githubId && !user.githubId) {
-        user.githubId = oauthUser.githubId;
-      }
-      if (oauthUser.photo && !user.photo) {
-        user.photo = oauthUser.photo;
-      }
+      if (oauthUser.googleId && !user.googleId) user.googleId = oauthUser.googleId;
+      if (oauthUser.githubId && !user.githubId) user.githubId = oauthUser.githubId;
+      if (oauthUser.photo && !user.photo) user.photo = oauthUser.photo;
       await this.userRepo.save(user);
     }
 
-    const token = this.generateToken(user);
-    return { token, user };
+    return this.generateTokens(user);
   }
 
-  // ─── ADMIN YARATISH (SuperAdmin) ─────────────────────────
+  // ─── ADMIN YARATISH ──────────────────────────────────────
   async createUser(dto: CreateAdminDto) {
     const exists = await this.userRepo.findOne({ where: { phone: dto.phone } });
     if (exists) throw new ConflictException('Bu telefon raqam allaqachon ro\'yxatdan o\'tgan');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = this.userRepo.create({
-      ...dto,
-      passwordHash,
-      provider: AuthProvider.LOCAL,
-    });
+    const user = this.userRepo.create({ ...dto, passwordHash, provider: AuthProvider.LOCAL });
     await this.userRepo.save(user);
 
-    return {
-      id: user.id,
-      fullName: user.fullName,
-      phone: user.phone,
-      role: user.role,
-      createdAt: user.createdAt,
-    };
+    return { id: user.id, fullName: user.fullName, phone: user.phone, role: user.role, createdAt: user.createdAt };
   }
 
   async getAllUsers() {
     return this.userRepo
       .createQueryBuilder('user')
       .where('user.role != :role', { role: UserRole.SUPERADMIN })
-      .select([
-        'user.id', 'user.fullName', 'user.phone', 'user.email',
-        'user.role', 'user.provider', 'user.isActive', 'user.createdAt',
-      ])
+      .select(['user.id', 'user.fullName', 'user.phone', 'user.email', 'user.role', 'user.provider', 'user.isActive', 'user.createdAt'])
       .orderBy('user.role', 'ASC')
       .addOrderBy('user.fullName', 'ASC')
       .getMany();
   }
 
+  // ─── SOFT DELETE ─────────────────────────────────────────
   async deactivateUser(id: string) {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Foydalanuvchi topilmadi');
     if (user.role === UserRole.SUPERADMIN) throw new ConflictException('SuperAdminni o\'chirib bo\'lmaydi');
     user.isActive = false;
+    user.refreshTokenHash = null;
     await this.userRepo.save(user);
     return { message: 'Foydalanuvchi deaktiv qilindi' };
   }
@@ -148,6 +141,15 @@ export class AuthService {
     user.isActive = true;
     await this.userRepo.save(user);
     return { message: 'Foydalanuvchi aktiv qilindi' };
+  }
+
+  // ─── TO'LIQ O'CHIRISH (soft delete) ──────────────────────
+  async deleteUser(id: string) {
+    const user = await this.userRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Foydalanuvchi topilmadi');
+    if (user.role === UserRole.SUPERADMIN) throw new ConflictException('SuperAdminni o\'chirib bo\'lmaydi');
+    await this.userRepo.softDelete(id);
+    return { message: 'Foydalanuvchi o\'chirildi' };
   }
 
   async getProfile(userId: string) {
@@ -172,26 +174,36 @@ export class AuthService {
 
     if (dto.fullName) user.fullName = dto.fullName;
     if (photoPath) user.photo = photoPath;
-
     await this.userRepo.save(user);
-    return {
-      id: user.id,
-      fullName: user.fullName,
-      phone: user.phone,
-      email: user.email,
-      role: user.role,
-      photo: user.photo,
-      provider: user.provider,
-    };
+
+    return { id: user.id, fullName: user.fullName, phone: user.phone, email: user.email, role: user.role, photo: user.photo, provider: user.provider };
   }
 
-  // ─── HELPER ──────────────────────────────────────────────
-  private generateToken(user: User): string {
-    return this.jwtService.sign({
-      sub: user.id,
-      phone: user.phone,
-      email: user.email,
-      role: user.role,
+  // ─── HELPER: TOKEN YARATISH ──────────────────────────────
+  private async generateTokens(user: User) {
+    const payload = { sub: user.id, phone: user.phone, email: user.email, role: user.role };
+
+    const accessToken = this.jwtService.sign(payload, {
+      secret: this.configService.get('JWT_SECRET', 'secret'),
+      expiresIn: this.configService.get('JWT_EXPIRES_IN', '15m'),
     });
+
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id },
+      {
+        secret: this.configService.get('JWT_REFRESH_SECRET', 'refresh-secret'),
+        expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN', '7d'),
+      },
+    );
+
+    // Refresh tokenni hash qilib saqlaymiz
+    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    await this.userRepo.update(user.id, { refreshTokenHash });
+
+    return {
+      accessToken,
+      refreshToken,
+      user: { id: user.id, fullName: user.fullName, phone: user.phone, email: user.email, role: user.role },
+    };
   }
 }

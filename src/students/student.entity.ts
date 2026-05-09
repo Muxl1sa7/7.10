@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToMany,
+  DeleteDateColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Group } from '../groups/group.entity';
@@ -46,6 +47,9 @@ export class Student {
   // forwardRef — circular dependency hal qiladi
   @ManyToMany(() => Group, (group) => group.students)
   groups: Group[];
+
+  @DeleteDateColumn()
+  deletedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

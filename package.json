@@ -1,7 +1,7 @@
 {
   "name": "crm-backend",
   "version": "1.0.0",
-  "description": "O'quv markazi CRM tizimi — NestJS + PostgreSQL + TypeORM",
+  "description": "O'quv markazi CRM tizimi \u2014 NestJS + PostgreSQL + TypeORM",
   "author": "",
   "private": true,
   "license": "MIT",
@@ -39,7 +39,9 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.0",
-    "typeorm": "^0.3.17"
+    "typeorm": "^0.3.17",
+    "winston": "^3.11.0",
+    "nest-winston": "^1.9.4"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

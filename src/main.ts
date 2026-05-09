@@ -1,30 +1,27 @@
-import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { WinstonModule } from 'nest-winston';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { winstonLogger } from './common/logger/winston.logger';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
-const logger = new Logger('Bootstrap');
-
-function ensureUploadDirs() {
-  const dirs = ['uploads', 'uploads/students', 'uploads/groups'];
+function ensureDirs() {
+  const dirs = ['uploads', 'uploads/students', 'uploads/groups', 'logs'];
   for (const dir of dirs) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      logger.log(`Papka yaratildi: ${dir}`);
-    }
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
 }
 
 async function bootstrap() {
-  ensureUploadDirs();
+  ensureDirs();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: WinstonModule.createLogger({ instance: winstonLogger }),
   });
 
   app.setGlobalPrefix('api');
@@ -35,13 +32,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Global xato filter
   app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // Global response wrapper
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  // Validation
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -51,10 +44,8 @@ async function bootstrap() {
     }),
   );
 
-  // Statik fayllar
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
-  // Swagger
   const config = new DocumentBuilder()
     .setTitle("O'quv Markazi CRM API")
     .setDescription(`
@@ -67,17 +58,12 @@ async function bootstrap() {
 | **ADMIN** | O'quvchi, guruh, to'lov, davomat, murojat |
 | **TEACHER** | Faqat o'z guruhi: davomat, ro'yxat |
 
-### Javob formati:
-\`\`\`json
-// Muvaffaqiyat:
-{ "success": true, "data": {...}, "timestamp": "..." }
-// Xato:
-{ "success": false, "statusCode": 400, "message": "...", "error": "..." }
-\`\`\`
-
 ### Kirish:
-1. \`POST /api/auth/login\` → token oling
-2. **Authorize** tugmasini bosib token kiriting
+1. \`POST /api/auth/login\` → accessToken va refreshToken oling
+2. **Authorize** tugmasini bosib accessToken kiriting
+
+### Token yangilash:
+- accessToken muddati tugasa: \`POST /api/auth/refresh\` ga refreshToken yuboring
     `)
     .setVersion('1.0')
     .addBearerAuth(
@@ -102,9 +88,9 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
-  logger.log(`🚀 Server: http://localhost:${port}/api`);
-  logger.log(`📚 Swagger: http://localhost:${port}/api/docs`);
-  logger.log(`🌍 Mode: ${process.env.NODE_ENV || 'development'}`);
+  winstonLogger.info(`🚀 Server: http://localhost:${port}/api`);
+  winstonLogger.info(`📚 Swagger: http://localhost:${port}/api/docs`);
+  winstonLogger.info(`🌍 Mode: ${process.env.NODE_ENV || 'development'}`);
 }
 
 bootstrap();

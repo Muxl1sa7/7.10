@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   ManyToMany,
   JoinTable,
@@ -52,6 +53,9 @@ export class Group {
     inverseJoinColumn: { name: 'studentId', referencedColumnName: 'id' },
   })
   students: Student[];
+
+  @DeleteDateColumn()
+  deletedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

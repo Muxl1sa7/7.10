@@ -1,5 +1,5 @@
 import {
-  Controller, Post, Get, Patch,
+  Controller, Post, Get, Patch, Delete,
   Body, Param, UseGuards,
   UseInterceptors, UploadedFile, Res, Req,
 } from '@nestjs/common';
@@ -12,7 +12,7 @@ import {
   ApiBearerAuth, ApiParam, ApiConsumes, ApiBody,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { LoginDto, CreateAdminDto, UpdateProfileDto, LoginResponseDto } from './dto/auth.dto';
+import { LoginDto, CreateAdminDto, UpdateProfileDto, LoginResponseDto, RefreshTokenDto } from './dto/auth.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GoogleAuthGuard } from '../common/guards/google-auth.guard';
@@ -39,15 +39,36 @@ export class AuthController {
   @Post('login')
   @Public()
   @Throttle({ short: { limit: 10, ttl: 300000 } })
-  @ApiOperation({ summary: 'Tizimga kirish (telefon + parol)' })
+  @ApiOperation({ summary: 'Tizimga kirish — accessToken va refreshToken qaytaradi' })
   @ApiResponse({ status: 200, type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'Noto\'g\'ri login yoki parol' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  @Post('refresh')
+  @Public()
+  @ApiOperation({
+    summary: 'Access token yangilash',
+    description: 'refreshToken yuborib yangi accessToken olish. Token muddati tugaganda ishlatiladi.',
+  })
+  @ApiResponse({ status: 200, description: 'Yangi tokenlar' })
+  @ApiResponse({ status: 401, description: 'Refresh token yaroqsiz' })
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshTokens(dto.refreshToken);
+  }
+
+  @Post('logout')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Tizimdan chiqish — refresh token o\'chiriladi' })
+  @ApiResponse({ status: 200, description: 'Muvaffaqiyatli chiqildi' })
+  logout(@CurrentUser('id') userId: string) {
+    return this.authService.logout(userId);
+  }
+
   @Get('callback')
   @Public()
-  @ApiOperation({ summary: 'OAuth callback — token ko\'rsatadi' })
+  @ApiOperation({ summary: 'OAuth callback sahifasi' })
   callback(@Req() req: Request, @Res() res: Response) {
     const token = req.query.token as string;
     res.send(`<!DOCTYPE html>
@@ -69,7 +90,7 @@ export class AuthController {
   <div class="card">
     <h2>Muvaffaqiyatli kirish!</h2>
     <p style="color:#34a853">Google/GitHub orqali kirish amalga oshdi.</p>
-    <p><strong>JWT Token:</strong></p>
+    <p><strong>Access Token:</strong></p>
     <div class="token" id="tok">${token}</div>
     <div class="btns">
       <button class="btn blue" onclick="copy()">Tokenni nusxalash</button>
@@ -80,7 +101,7 @@ export class AuthController {
   <script>
     function copy(){
       navigator.clipboard.writeText(document.getElementById('tok').innerText)
-        .then(()=>alert('Token nusxalandi! Swagger Authorize ga kiriting.'));
+        .then(()=>alert('Token nusxalandi!'));
     }
   </script>
 </body>
@@ -98,8 +119,8 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Google callback' })
   async googleCallback(@CurrentUser() oauthUser: any, @Res() res: Response) {
-    const { token } = await this.authService.validateOAuthUser(oauthUser);
-res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
+    const { accessToken } = await this.authService.validateOAuthUser(oauthUser);
+    res.redirect(`http://localhost:3000/api/auth/callback?token=${accessToken}`);
   }
 
   @Get('github')
@@ -113,8 +134,8 @@ res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
   @UseGuards(GithubAuthGuard)
   @ApiOperation({ summary: 'GitHub callback' })
   async githubCallback(@CurrentUser() oauthUser: any, @Res() res: Response) {
-    const { token } = await this.authService.validateOAuthUser(oauthUser);
-res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
+    const { accessToken } = await this.authService.validateOAuthUser(oauthUser);
+    res.redirect(`http://localhost:3000/api/auth/callback?token=${accessToken}`);
   }
 
   @Post('users')
@@ -122,6 +143,7 @@ res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Admin yoki Teacher yaratish (faqat SUPERADMIN)' })
   @ApiResponse({ status: 201, description: 'Yaratildi' })
+  @ApiResponse({ status: 409, description: 'Telefon allaqachon mavjud' })
   createUser(@Body() dto: CreateAdminDto) {
     return this.authService.createUser(dto);
   }
@@ -150,6 +172,15 @@ res.redirect(`http://localhost:3000/api/auth/callback?token=${token}`);
   @ApiParam({ name: 'id' })
   activateUser(@Param('id') id: string) {
     return this.authService.activateUser(id);
+  }
+
+  @Delete('users/:id')
+  @Roles(UserRole.SUPERADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Foydalanuvchini o\'chirish (soft delete)' })
+  @ApiParam({ name: 'id' })
+  deleteUser(@Param('id') id: string) {
+    return this.authService.deleteUser(id);
   }
 
   @Get('profile')
